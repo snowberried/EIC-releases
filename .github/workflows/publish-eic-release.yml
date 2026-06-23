@@ -1,0 +1,162 @@
+name: Publish EIC Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Git ref in snowberried/EIC to build
+        required: true
+        default: master
+      prerelease:
+        description: Mark the GitHub Release as prerelease
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPOSITORY: snowberried/EIC
+  HAS_SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN != '' }}
+  HAS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+  HAS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
+
+jobs:
+  build-windows:
+    name: Build and publish Windows updater assets
+    runs-on: windows-latest
+
+    steps:
+      - name: Validate required secrets
+        shell: pwsh
+        run: |
+          $missing = @()
+          if ($env:HAS_SOURCE_REPO_TOKEN -ne 'true') {
+            $missing += 'SOURCE_REPO_TOKEN'
+          }
+          if ($env:HAS_TAURI_SIGNING_PRIVATE_KEY -ne 'true') {
+            $missing += 'TAURI_SIGNING_PRIVATE_KEY'
+          }
+          if ($env:HAS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ne 'true') {
+            $missing += 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD'
+          }
+          if ($missing.Count -gt 0) {
+            $message = 'Missing required repository secrets: ' + ($missing -join ', ')
+            Write-Error $message
+            exit 1
+          }
+
+      - name: Checkout EIC source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPOSITORY }}
+          ref: ${{ inputs.source_ref }}
+          path: EIC
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: EIC/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        working-directory: EIC
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: EIC
+        run: npm run typecheck
+
+      - name: Build signed Tauri updater artifacts
+        working-directory: EIC
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri -- build
+
+      - name: Prepare GitHub Release assets
+        shell: pwsh
+        working-directory: EIC
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $config = Get-Content -Raw -Encoding UTF8 -LiteralPath 'src-tauri/tauri.conf.json' | ConvertFrom-Json
+          $version = [string]$config.version
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'src-tauri/tauri.conf.json does not contain a version.'
+          }
+
+          $bundleDir = (Resolve-Path 'src-tauri/target/release/bundle/nsis').Path
+          $setup = Get-ChildItem -LiteralPath $bundleDir -File -Filter '*setup.exe' |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          $updater = Get-ChildItem -LiteralPath $bundleDir -File -Filter '*.nsis.zip' |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          $signatureFile = Get-ChildItem -LiteralPath $bundleDir -File -Filter '*.nsis.zip.sig' |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $setup) {
+            throw 'Windows NSIS setup exe was not generated.'
+          }
+          if ($null -eq $updater) {
+            throw 'Tauri updater bundle (*.nsis.zip) was not generated.'
+          }
+          if ($null -eq $signatureFile) {
+            throw 'Tauri updater signature (*.nsis.zip.sig) was not generated.'
+          }
+
+          $assetsDir = Join-Path $env:GITHUB_WORKSPACE 'release-assets'
+          New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
+
+          Copy-Item -LiteralPath $setup.FullName -Destination $assetsDir
+          Copy-Item -LiteralPath $updater.FullName -Destination $assetsDir
+          Copy-Item -LiteralPath $signatureFile.FullName -Destination $assetsDir
+
+          $tag = "v$version"
+          $signature = (Get-Content -Raw -Encoding UTF8 -LiteralPath $signatureFile.FullName).Trim()
+          $updaterUrl = "https://github.com/snowberried/EIC-releases/releases/download/$tag/$($updater.Name)"
+          $pubDate = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+          $latestJson = [ordered]@{
+            version = $version
+            notes = "EIC $version"
+            pub_date = $pubDate
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = $signature
+                url = $updaterUrl
+              }
+            }
+          }
+
+          $latestJson |
+            ConvertTo-Json -Depth 10 |
+            Set-Content -Encoding UTF8 -LiteralPath (Join-Path $assetsDir 'latest.json')
+
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: EIC ${{ env.APP_VERSION }}
+          body: |
+            EIC ${{ env.APP_VERSION }}
+
+            Source repository: snowberried/EIC
+            Source ref: ${{ inputs.source_ref }}
+            Updater endpoint: https://github.com/snowberried/EIC-releases/releases/latest/download/latest.json
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
+          make_latest: true
+          overwrite_files: true
+          files: release-assets/*
