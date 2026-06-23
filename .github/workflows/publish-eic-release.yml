@@ -116,13 +116,17 @@ jobs:
           $assetsDir = Join-Path $env:GITHUB_WORKSPACE 'release-assets'
           New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
 
-          Copy-Item -LiteralPath $setup.FullName -Destination $assetsDir
-          Copy-Item -LiteralPath $updater.FullName -Destination $assetsDir
-          Copy-Item -LiteralPath $signatureFile.FullName -Destination $assetsDir
+          $setupAssetName = "EIC_$($version)_x64-setup.exe"
+          $updaterAssetName = "EIC_$($version)_x64-setup.nsis.zip"
+          $signatureAssetName = "$updaterAssetName.sig"
+
+          Copy-Item -LiteralPath $setup.FullName -Destination (Join-Path $assetsDir $setupAssetName)
+          Copy-Item -LiteralPath $updater.FullName -Destination (Join-Path $assetsDir $updaterAssetName)
+          Copy-Item -LiteralPath $signatureFile.FullName -Destination (Join-Path $assetsDir $signatureAssetName)
 
           $tag = "v$version"
           $signature = (Get-Content -Raw -Encoding UTF8 -LiteralPath $signatureFile.FullName).Trim()
-          $updaterUrl = "https://github.com/snowberried/EIC-releases/releases/download/$tag/$($updater.Name)"
+          $updaterUrl = "https://github.com/snowberried/EIC-releases/releases/download/$tag/$updaterAssetName"
           $pubDate = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 
           $latestJson = [ordered]@{
