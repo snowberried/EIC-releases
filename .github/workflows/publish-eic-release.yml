@@ -108,6 +108,26 @@ jobs:
         working-directory: EIC
         run: git checkout --detach '${{ steps.release-check.outputs.source_sha }}'
 
+      - name: Validate user-facing release notes
+        if: steps.release-check.outputs.should_publish == 'true'
+        shell: pwsh
+        working-directory: EIC
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath 'release-notes.json')) {
+            throw 'release-notes.json is required for a public release.'
+          }
+
+          $releaseNotes = Get-Content -Raw -Encoding UTF8 -LiteralPath 'release-notes.json' | ConvertFrom-Json
+          if ([string]$releaseNotes.version -ne '${{ steps.release-check.outputs.app_version }}') {
+            throw "release-notes.json version $($releaseNotes.version) does not match app version ${{ steps.release-check.outputs.app_version }}."
+          }
+
+          $items = @($releaseNotes.items | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+          if ($items.Count -eq 0) {
+            throw 'release-notes.json must contain at least one update item.'
+          }
+
       - name: Setup Node.js
         if: steps.release-check.outputs.should_publish == 'true'
         uses: actions/setup-node@v4
@@ -143,6 +163,9 @@ jobs:
         if: steps.release-check.outputs.should_publish == 'true'
         shell: pwsh
         working-directory: EIC
+        env:
+          SELECTED_SOURCE_REF: ${{ steps.release-check.outputs.source_ref }}
+          SELECTED_SOURCE_SHA: ${{ steps.release-check.outputs.source_sha }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -151,6 +174,10 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) {
             throw 'src-tauri/tauri.conf.json does not contain a version.'
           }
+
+          $releaseNotes = Get-Content -Raw -Encoding UTF8 -LiteralPath 'release-notes.json' | ConvertFrom-Json
+          $releaseItems = @($releaseNotes.items | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+          $releaseNotesText = ($releaseItems | ForEach-Object { "- $_" }) -join "`n"
 
           $bundleDir = (Resolve-Path 'src-tauri/target/release/bundle/nsis').Path
           $setup = Get-ChildItem -LiteralPath $bundleDir -File -Filter '*setup.exe' |
@@ -191,7 +218,7 @@ jobs:
 
           $latestJson = [ordered]@{
             version = $version
-            notes = "EIC $version"
+            notes = $releaseNotesText
             pub_date = $pubDate
             platforms = [ordered]@{
               'windows-x86_64' = [ordered]@{
@@ -205,6 +232,20 @@ jobs:
             ConvertTo-Json -Depth 10 |
             Set-Content -Encoding UTF8 -LiteralPath (Join-Path $assetsDir 'latest.json')
 
+          @(
+            "EIC $version"
+            ''
+            '## 업데이트 내용'
+            ''
+            $releaseNotesText
+            ''
+            "Source repository: snowberried/EIC"
+            "Source ref: $env:SELECTED_SOURCE_REF"
+            "Source commit: $env:SELECTED_SOURCE_SHA"
+            'Updater endpoint: https://github.com/snowberried/EIC-releases/releases/latest/download/latest.json'
+          ) -join "`n" |
+            Set-Content -Encoding UTF8 -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'release-body.md')
+
           "APP_VERSION=$version" >> $env:GITHUB_ENV
           "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
 
@@ -214,13 +255,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: EIC ${{ env.APP_VERSION }}
-          body: |
-            EIC ${{ env.APP_VERSION }}
-
-            Source repository: snowberried/EIC
-            Source ref: ${{ steps.release-check.outputs.source_ref }}
-            Source commit: ${{ steps.release-check.outputs.source_sha }}
-            Updater endpoint: https://github.com/snowberried/EIC-releases/releases/latest/download/latest.json
+          body_path: release-body.md
           draft: false
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           make_latest: true
