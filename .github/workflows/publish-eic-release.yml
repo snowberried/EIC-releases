@@ -1,6 +1,9 @@
 name: Publish EIC Release
 
 on:
+  repository_dispatch:
+    types:
+      - eic-version-pushed
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
@@ -24,7 +27,7 @@ concurrency:
 
 env:
   SOURCE_REPOSITORY: snowberried/EIC
-  SOURCE_REF: ${{ inputs.source_ref || 'master' }}
+  SOURCE_REF: ${{ github.event.client_payload.source_sha || inputs.source_ref || 'master' }}
   HAS_SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN != '' }}
   HAS_NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY != '' }}
   HAS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
@@ -98,6 +101,8 @@ jobs:
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
             $selectorArgs.RequestedRef = 'HEAD'
             $selectorArgs.ForcePublish = $true
+          } elseif ('${{ github.event_name }}' -eq 'repository_dispatch') {
+            $selectorArgs.RequestedRef = 'HEAD'
           }
 
           & $selector @selectorArgs
