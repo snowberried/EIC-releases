@@ -54,6 +54,9 @@ jobs:
             exit 1
           }
 
+      - name: Checkout release automation
+        uses: actions/checkout@v4
+
       - name: Checkout EIC source
         uses: actions/checkout@v4
         with:
@@ -61,6 +64,12 @@ jobs:
           ref: ${{ env.SOURCE_REF }}
           path: EIC
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          fetch-depth: 0
+
+      - name: Fetch all EIC source branches
+        shell: pwsh
+        working-directory: EIC
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
 
       - name: Check whether a newer version should be published
         id: release-check
@@ -71,35 +80,29 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $packageVersion = [string](Get-Content -Raw -Encoding UTF8 -LiteralPath 'package.json' | ConvertFrom-Json).version
-          $configVersion = [string](Get-Content -Raw -Encoding UTF8 -LiteralPath 'src-tauri/tauri.conf.json' | ConvertFrom-Json).version
-          $cargoContent = Get-Content -Raw -Encoding UTF8 -LiteralPath 'src-tauri/Cargo.toml'
-          $cargoVersionMatch = [regex]::Match($cargoContent, '(?m)^version\s*=\s*"([^"]+)"')
-          if (-not $cargoVersionMatch.Success) {
-            throw 'src-tauri/Cargo.toml does not contain a package version.'
-          }
-          $cargoVersion = $cargoVersionMatch.Groups[1].Value
-
-          if ($packageVersion -ne $configVersion -or $packageVersion -ne $cargoVersion) {
-            throw "Version mismatch: package.json=$packageVersion, tauri.conf.json=$configVersion, Cargo.toml=$cargoVersion"
-          }
-
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            "should_publish=true" >> $env:GITHUB_OUTPUT
-            "app_version=$packageVersion" >> $env:GITHUB_OUTPUT
-            exit 0
-          }
-
           $latestTag = gh release view --repo snowberried/EIC-releases --json tagName --jq '.tagName'
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($latestTag)) {
             throw 'Could not read the latest EIC release version.'
           }
           $latestVersion = $latestTag.Trim().TrimStart('v')
-          $shouldPublish = [version]$packageVersion -gt [version]$latestVersion
 
-          "should_publish=$($shouldPublish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          "app_version=$packageVersion" >> $env:GITHUB_OUTPUT
-          "Source version: $packageVersion / latest release: $latestVersion / publish: $shouldPublish"
+          $selector = Join-Path $env:GITHUB_WORKSPACE '.github/scripts/select-eic-release-source.ps1'
+          $selectorArgs = @{
+            SourceDirectory = (Get-Location).Path
+            LatestVersion = $latestVersion
+          }
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $selectorArgs.RequestedRef = 'HEAD'
+            $selectorArgs.ForcePublish = $true
+          }
+
+          & $selector @selectorArgs
+
+      - name: Checkout selected EIC release commit
+        if: steps.release-check.outputs.should_publish == 'true'
+        shell: pwsh
+        working-directory: EIC
+        run: git checkout --detach '${{ steps.release-check.outputs.source_sha }}'
 
       - name: Setup Node.js
         if: steps.release-check.outputs.should_publish == 'true'
@@ -210,7 +213,8 @@ jobs:
             EIC ${{ env.APP_VERSION }}
 
             Source repository: snowberried/EIC
-            Source ref: ${{ env.SOURCE_REF }}
+            Source ref: ${{ steps.release-check.outputs.source_ref }}
+            Source commit: ${{ steps.release-check.outputs.source_sha }}
             Updater endpoint: https://github.com/snowberried/EIC-releases/releases/latest/download/latest.json
           draft: false
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
