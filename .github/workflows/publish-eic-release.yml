@@ -26,6 +26,7 @@ env:
   SOURCE_REPOSITORY: snowberried/EIC
   SOURCE_REF: ${{ inputs.source_ref || 'master' }}
   HAS_SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN != '' }}
+  HAS_NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY != '' }}
   HAS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
   HAS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
 
@@ -41,6 +42,9 @@ jobs:
           $missing = @()
           if ($env:HAS_SOURCE_REPO_TOKEN -ne 'true') {
             $missing += 'SOURCE_REPO_TOKEN'
+          }
+          if ($env:HAS_NEMC_EMERGENCY_API_KEY -ne 'true') {
+            $missing += 'NEMC_EMERGENCY_API_KEY'
           }
           if ($env:HAS_TAURI_SIGNING_PRIVATE_KEY -ne 'true') {
             $missing += 'TAURI_SIGNING_PRIVATE_KEY'
@@ -130,6 +134,7 @@ jobs:
         if: steps.release-check.outputs.should_publish == 'true'
         working-directory: EIC
         env:
+          NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build
