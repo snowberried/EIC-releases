@@ -4,8 +4,6 @@ on:
   repository_dispatch:
     types:
       - eic-version-pushed
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       source_ref:
