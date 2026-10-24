@@ -27,7 +27,6 @@ env:
   SOURCE_REPOSITORY: snowberried/EIC
   SOURCE_REF: ${{ github.event.client_payload.source_sha || inputs.source_ref || 'master' }}
   HAS_SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN != '' }}
-  HAS_NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY != '' }}
   HAS_EIC_FEEDBACK_API_KEY: ${{ secrets.EIC_FEEDBACK_API_KEY != '' }}
   HAS_EIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_EIC_FIREBASE_PROJECT_ID != '' }}
   HAS_EIC_FIREBASE_APP_ID: ${{ secrets.VITE_EIC_FIREBASE_APP_ID != '' }}
@@ -47,9 +46,6 @@ jobs:
           $missing = @()
           if ($env:HAS_SOURCE_REPO_TOKEN -ne 'true') {
             $missing += 'SOURCE_REPO_TOKEN'
-          }
-          if ($env:HAS_NEMC_EMERGENCY_API_KEY -ne 'true') {
-            $missing += 'NEMC_EMERGENCY_API_KEY'
           }
           if ($env:HAS_EIC_FEEDBACK_API_KEY -ne 'true') {
             $missing += 'EIC_FEEDBACK_API_KEY'
@@ -173,7 +169,6 @@ jobs:
         if: steps.release-check.outputs.should_publish == 'true'
         working-directory: EIC
         env:
-          NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY }}
           EIC_FEEDBACK_API_KEY: ${{ secrets.EIC_FEEDBACK_API_KEY }}
           VITE_EIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_EIC_FIREBASE_PROJECT_ID }}
           VITE_EIC_FIREBASE_APP_ID: ${{ secrets.VITE_EIC_FIREBASE_APP_ID }}

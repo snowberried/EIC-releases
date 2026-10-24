@@ -31,5 +31,9 @@ The workflow builds the Windows Tauri app and uploads:
 - `SOURCE_REPO_TOKEN`: GitHub token that can read the private `snowberried/EIC` source repository.
 - `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater signing private key.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: Tauri updater signing key password.
+- `VITE_EIC_FIREBASE_PROJECT_ID`, `VITE_EIC_FIREBASE_APP_ID`, `VITE_EIC_FIREBASE_API_KEY`: public Firebase client configuration for PC authentication.
+- `EIC_FEEDBACK_API_KEY`: public Firebase client configuration for the feedback service.
+
+Government API service keys and private database download tokens are managed by the EIC server. Never inject them into application builds. Starting with EIC 0.9.1, `NEMC_EMERGENCY_API_KEY` is not a build secret.
 
 Never commit the private signing key to this repository.
