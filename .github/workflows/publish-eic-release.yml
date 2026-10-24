@@ -28,6 +28,10 @@ env:
   SOURCE_REF: ${{ github.event.client_payload.source_sha || inputs.source_ref || 'master' }}
   HAS_SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN != '' }}
   HAS_NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY != '' }}
+  HAS_EIC_FEEDBACK_API_KEY: ${{ secrets.EIC_FEEDBACK_API_KEY != '' }}
+  HAS_EIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_EIC_FIREBASE_PROJECT_ID != '' }}
+  HAS_EIC_FIREBASE_APP_ID: ${{ secrets.VITE_EIC_FIREBASE_APP_ID != '' }}
+  HAS_EIC_FIREBASE_API_KEY: ${{ secrets.VITE_EIC_FIREBASE_API_KEY != '' }}
   HAS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
   HAS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
 
@@ -46,6 +50,18 @@ jobs:
           }
           if ($env:HAS_NEMC_EMERGENCY_API_KEY -ne 'true') {
             $missing += 'NEMC_EMERGENCY_API_KEY'
+          }
+          if ($env:HAS_EIC_FEEDBACK_API_KEY -ne 'true') {
+            $missing += 'EIC_FEEDBACK_API_KEY'
+          }
+          if ($env:HAS_EIC_FIREBASE_PROJECT_ID -ne 'true') {
+            $missing += 'VITE_EIC_FIREBASE_PROJECT_ID'
+          }
+          if ($env:HAS_EIC_FIREBASE_APP_ID -ne 'true') {
+            $missing += 'VITE_EIC_FIREBASE_APP_ID'
+          }
+          if ($env:HAS_EIC_FIREBASE_API_KEY -ne 'true') {
+            $missing += 'VITE_EIC_FIREBASE_API_KEY'
           }
           if ($env:HAS_TAURI_SIGNING_PRIVATE_KEY -ne 'true') {
             $missing += 'TAURI_SIGNING_PRIVATE_KEY'
@@ -158,6 +174,10 @@ jobs:
         working-directory: EIC
         env:
           NEMC_EMERGENCY_API_KEY: ${{ secrets.NEMC_EMERGENCY_API_KEY }}
+          EIC_FEEDBACK_API_KEY: ${{ secrets.EIC_FEEDBACK_API_KEY }}
+          VITE_EIC_FIREBASE_PROJECT_ID: ${{ secrets.VITE_EIC_FIREBASE_PROJECT_ID }}
+          VITE_EIC_FIREBASE_APP_ID: ${{ secrets.VITE_EIC_FIREBASE_APP_ID }}
+          VITE_EIC_FIREBASE_API_KEY: ${{ secrets.VITE_EIC_FIREBASE_API_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build
@@ -181,6 +201,7 @@ jobs:
           $releaseNotes = Get-Content -Raw -Encoding UTF8 -LiteralPath 'release-notes.json' | ConvertFrom-Json
           $releaseItems = @($releaseNotes.items | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
           $releaseNotesText = ($releaseItems | ForEach-Object { "- $_" }) -join "`n"
+          $releaseBodyText = @("- **$($releaseItems[0])**") + @($releaseItems | Select-Object -Skip 1 | ForEach-Object { "- $_" })
 
           $bundleDir = (Resolve-Path 'src-tauri/target/release/bundle/nsis').Path
           $setup = Get-ChildItem -LiteralPath $bundleDir -File -Filter '*setup.exe' |
@@ -240,7 +261,7 @@ jobs:
             ''
             '## 업데이트 내용'
             ''
-            $releaseNotesText
+            ($releaseBodyText -join "`n")
             ''
             "Source repository: snowberried/EIC"
             "Source ref: $env:SELECTED_SOURCE_REF"
